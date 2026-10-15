@@ -1,0 +1,1094 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Flugbahn-Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed broadcast stage (3D court) with a TV lower-third, control rail underneath. Deliberately single dark theme like a TV replay graphic. */
+:root {
+  --bg: #060b16;
+  --panel: rgba(9, 16, 32, 0.86);
+  --panel-solid: #0c1528;
+  --line: #22314d;
+  --fg: #eef3fb;
+  --muted: #8d9cb8;
+  --accent: #ffd23f;
+  --feeder: #4da3ff;
+  --worker: #ff9a2e;
+  --in: #39d98a;
+  --out: #ff4d5e;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  overflow: hidden;
+}
+#app { height: 100%; display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%);
+}
+
+.top {
+  position: absolute; z-index: 2; top: 14px;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  pointer-events: none;
+}
+.brand { display: grid; gap: 2px; min-width: 0; }
+.eyebrow {
+  font-family: var(--display); font-weight: 600; font-size: 12px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+}
+.brand h1 {
+  margin: 0; font-family: var(--display); font-weight: 700; font-size: 26px;
+  letter-spacing: .02em; text-transform: uppercase; line-height: 1;
+}
+.legend { display: flex; gap: 14px; margin-top: 8px; font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.hint {
+  max-width: 30ch; text-align: right; font-size: 13px; color: var(--muted); line-height: 1.35;
+}
+
+/* Lower third */
+.l3 {
+  position: absolute; z-index: 2; bottom: 16px;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  pointer-events: none;
+}
+.l3-row { display: flex; align-items: stretch; max-width: 100%; }
+.l3-name {
+  background: var(--panel-solid); color: var(--fg);
+  font-family: var(--display); font-weight: 700; font-size: 30px; line-height: 1;
+  text-transform: uppercase; letter-spacing: .03em;
+  padding: 10px 26px 10px 16px; min-width: 0;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  border-top: 3px solid var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.l3-call {
+  margin-left: -10px; min-width: 92px; flex: none;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  padding: 6px 22px; color: #04120b; background: var(--in);
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  font-family: var(--display); font-weight: 700; font-size: 30px; line-height: 1;
+  transform-origin: left center;
+  transition: opacity .25s ease, transform .25s ease, background-color .2s ease;
+}
+.l3-call small { font-size: 12px; font-weight: 600; letter-spacing: .06em; opacity: .85; white-space: nowrap; }
+.l3-call.out { background: var(--out); color: #1d0306; }
+.l3-call.feeder { background: var(--feeder); color: #021024; }
+.l3-call.worker { background: var(--worker); color: #241200; }
+.l3-call.wait { opacity: 0; transform: scaleX(.6); }
+.stats {
+  display: flex; flex-wrap: wrap;
+  background: var(--panel); backdrop-filter: blur(6px);
+  font-variant-numeric: tabular-nums; max-width: 100%;
+}
+.stat { padding: 6px 14px; display: grid; gap: 1px; border-right: 1px solid var(--line); }
+.stat:last-child { border-right: 0; }
+.stat span {
+  font-family: var(--display); font-size: 11px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.stat b { font-family: var(--display); font-weight: 600; font-size: 20px; white-space: nowrap; }
+
+/* Progress strip (drill mode) */
+.progress {
+  position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.08);
+}
+.progress div { height: 100%; width: 0; background: var(--accent); }
+
+/* Script drawer */
+.drawer {
+  position: absolute; z-index: 4; top: 0; right: 0; bottom: 0;
+  width: min(440px, 100%); background: var(--panel-solid); border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px;
+  padding-block: 16px; padding-left: 16px;
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.drawer h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: .04em; text-transform: uppercase; }
+.drawer p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; }
+.drawer code { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+.drawer textarea {
+  flex: 1; min-height: 0; resize: none; width: 100%; box-sizing: border-box;
+  background: #070d1b; color: var(--fg); border: 1px solid var(--line); border-radius: 3px;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.45; padding: 10px; tab-size: 2;
+}
+.drawer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.drawer .err { color: var(--out); font-size: 13px; min-height: 1.2em; }
+.drawer .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.drawer .opt { display: grid; gap: 6px; }
+.drawer .opt > span { font-family: var(--display); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.meter { height: 6px; background: #070d1b; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.meter div { height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+.status { font-size: 14px; color: var(--fg); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+.status.bad { color: var(--out); }
+
+/* Controls */
+.rail {
+  flex: none; background: var(--panel-solid); border-top: 1px solid var(--line);
+  padding-block: 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
+}
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.group > .lbl {
+  font-family: var(--display); font-size: 12px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); margin-right: 4px;
+}
+.chip {
+  appearance: none; border: 1px solid var(--line); background: transparent; color: var(--fg);
+  font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: .04em;
+  text-transform: uppercase; padding: 6px 12px; border-radius: 3px; cursor: pointer;
+}
+.chip:hover { border-color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #141000; }
+.chip:focus-visible, .play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.play {
+  appearance: none; border: 0; cursor: pointer; border-radius: 3px;
+  background: var(--fg); color: var(--bg);
+  font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .06em;
+  text-transform: uppercase; padding: 8px 18px;
+}
+.play.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.spacer { flex: 1; }
+
+@media (max-width: 640px) {
+  .brand h1 { font-size: 21px; }
+  .hint { display: none; }
+  .l3-name, .l3-call { font-size: 22px; }
+  .stat b { font-size: 16px; }
+  .stat { padding: 5px 9px; }
+  .chip { font-size: 14px; padding: 5px 10px; }
+  .rail { gap: 8px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l3-call { transition: none; }
+}
+</style>
+
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <div class="top">
+      <div class="brand">
+        <div class="eyebrow" id="eyebrow">Prototyp · Phase 2</div>
+        <h1>Flugbahn-Studio</h1>
+        <div class="legend" id="legend"><span><i style="background:var(--feeder)"></i>Feeder</span><span><i style="background:var(--worker)"></i>Worker</span></div>
+      </div>
+      <div class="hint" id="hint">Ziehen dreht die Kamera, zwei Finger zoomen. Unter „Skript“ kannst du den Drill als JSON ändern.</div>
+    </div>
+    <div class="l3" aria-live="polite">
+      <div class="l3-row">
+        <div class="l3-name" id="shotName">–</div>
+        <div class="l3-call wait" id="call"><span id="callMain">IN</span><small id="callDist">–</small></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span id="k1">Schlag</span><b id="v1">–</b></div>
+        <div class="stat"><span id="k2">Ziel</span><b id="v2">–</b></div>
+        <div class="stat"><span id="k3">Abflug</span><b id="v3">–</b></div>
+        <div class="stat"><span id="k4">Durchgang</span><b id="v4">–</b></div>
+      </div>
+    </div>
+    <div class="progress" id="progress"><div id="progressBar"></div></div>
+
+    <div class="drawer" id="drawer" hidden>
+      <h2>Drill-Skript</h2>
+      <p>Zonen: <code>A.</code> oder <code>B.</code> + <code>front</code>/<code>mid</code>/<code>back</code> + <code>_forehand</code>/<code>_center</code>/<code>_backhand</code>, oder <code>base</code>. Schläge: <code>clear smash drop drive block net net_feed lift push net_kill feed</code>.</p>
+      <textarea id="script" spellcheck="false" aria-label="Drill-Skript als JSON"></textarea>
+      <div class="err" id="scriptErr" role="alert"></div>
+      <div class="row">
+        <button class="play" id="applyScript" type="button">Übernehmen ▶</button>
+        <button class="play ghost" id="resetScript" type="button">Beispiel laden</button>
+        <button class="play ghost" id="closeScript" type="button">Schließen</button>
+      </div>
+    </div>
+
+    <div class="drawer" id="exportPanel" hidden>
+      <h2>Video exportieren</h2>
+      <p>Das Video zeigt den Ablauf einmal komplett, mit der gewählten Kamera und dem gewählten Tempo. Es wird Bild für Bild gerendert, deshalb ruckelt es nicht, auch wenn das Rendern etwas dauert.</p>
+      <div class="opt"><span>Format</span><div class="row" id="formats"></div></div>
+      <div class="opt"><span>Bilder pro Sekunde</span><div class="row" id="fpsOpts"></div></div>
+      <div class="meter" aria-hidden="true"><div id="exportBar"></div></div>
+      <div class="status" id="exportStatus" role="status">Bereit.</div>
+      <div class="row">
+        <button class="play" id="startExport" type="button">Video erstellen</button>
+        <button class="play ghost" id="saveExport" type="button" hidden>Speichern</button>
+        <button class="play ghost" id="closeExport" type="button">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="rail">
+    <div class="group" id="modes"><span class="lbl">Modus</span></div>
+    <div class="group" id="shots" hidden><span class="lbl">Schlag</span></div>
+    <div class="group" id="cams"><span class="lbl">Kamera</span></div>
+    <div class="group" id="speeds"><span class="lbl">Tempo</span></div>
+    <div class="spacer"></div>
+    <div class="group">
+      <button class="play ghost" id="openScript" type="button">Skript</button>
+      <button class="play ghost" id="openExport" type="button">Video</button>
+      <button class="play ghost" id="pause" type="button">Pause</button>
+      <button class="play" id="replay" type="button">Nochmal ▶</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js"></script>
+<script>
+(() => {
+  // ---------- Court geometry (BWF, metres). x = width, z = length, y = up. Net at z = 0.
+  // Side A is the near half (z > 0), side B the far half (z < 0).
+  const HALF_L = 6.70, HALF_W = 3.05, SINGLES_HW = 2.59;
+  const SHORT_SVC = 1.98, LONG_SVC_DBL = 5.94, LINE = 0.04;
+  const NET_CENTER = 1.524, NET_POST = 1.55;
+  const netHeight = x => NET_CENTER + (NET_POST - NET_CENTER) * Math.min(1, (Math.abs(x) / HALF_W) ** 2);
+
+  // ---------- Shuttle physics: gravity + quadratic drag, terminal velocity ~6.8 m/s
+  const G = 9.81, VT = 6.8, K = G / (VT * VT);
+  const RAD = Math.PI / 180;
+
+  function simulate(p0, v0) {
+    const dt = 0.002;
+    let p = { ...p0 }, v = { ...v0 }, t = 0;
+    const pts = [{ t, x: p.x, y: p.y, z: p.z }];
+    let netY = null, netX = 0, apex = p.y, land = null;
+    const acc = u => { const s = Math.hypot(u.x, u.y, u.z); return { x: -K * s * u.x, y: -G - K * s * u.y, z: -K * s * u.z }; };
+    while (t < 8) {
+      const a1 = acc(v);
+      const vm = { x: v.x + a1.x * dt / 2, y: v.y + a1.y * dt / 2, z: v.z + a1.z * dt / 2 };
+      const a2 = acc(vm);
+      const np = { x: p.x + vm.x * dt, y: p.y + vm.y * dt, z: p.z + vm.z * dt };
+      const nv = { x: v.x + a2.x * dt, y: v.y + a2.y * dt, z: v.z + a2.z * dt };
+      if (netY === null && p.z !== 0 && Math.sign(p.z) !== Math.sign(np.z)) {
+        const f = p.z / (p.z - np.z);
+        netY = p.y + (np.y - p.y) * f; netX = p.x + (np.x - p.x) * f;
+      }
+      if (np.y <= 0) {
+        const f = p.y / (p.y - np.y);
+        land = { t: t + dt * f, x: p.x + (np.x - p.x) * f, y: 0, z: p.z + (np.z - p.z) * f, v: Math.hypot(nv.x, nv.y, nv.z) };
+        pts.push(land);
+        break;
+      }
+      p = np; v = nv; t += dt;
+      apex = Math.max(apex, p.y);
+      pts.push({ t, x: p.x, y: p.y, z: p.z });
+    }
+    return { pts, land, netY, netX, apex, from: p0 };
+  }
+
+  const netOk = r => r.netY !== null && r.netY > netHeight(r.netX) + 0.05;
+
+  // Solve launch so the shuttle lands on `to`.
+  // mode "angle": fixed elevation, bisect speed. mode "speed": fixed speed, bisect elevation.
+  function solve(from, to, spec) {
+    const dx = to.x - from.x, dz = to.z - from.z, D = Math.hypot(dx, dz);
+    const ux = dx / D, uz = dz / D;
+    const shoot = (v, th) => simulate(from, { x: ux * Math.cos(th * RAD) * v, y: Math.sin(th * RAD) * v, z: uz * Math.cos(th * RAD) * v });
+    const reach = r => r.land ? (r.land.x - from.x) * ux + (r.land.z - from.z) * uz : 1e9;
+
+    if (spec.mode === "speed") {
+      for (let v = spec.v0; v >= spec.v0 * 0.45; v *= 0.92) {
+        let lo = spec.thMin, hi = spec.thMax;
+        if (reach(shoot(v, hi)) < D || reach(shoot(v, lo)) > D) continue;
+        for (let i = 0; i < 36; i++) { const m = (lo + hi) / 2; reach(shoot(v, m)) < D ? lo = m : hi = m; }
+        const r = shoot(v, hi);
+        if (netOk(r)) return { ...r, v0: v, theta: hi };
+      }
+    }
+    for (let th = spec.theta ?? 20; th <= 78; th += 2) {
+      let lo = 0.5, hi = 120;
+      if (reach(shoot(hi, th)) < D) continue;
+      for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; reach(shoot(m, th)) < D ? lo = m : hi = m; }
+      const r = shoot(hi, th);
+      if (netOk(r)) return { ...r, v0: hi, theta: th };
+    }
+    return null;
+  }
+
+  // ---------- Shot types: contact height (m), launch model, German name
+  const SHOT_TYPES = {
+    clear:    { name: "Clear",        contact: 2.5,  spec: { mode: "angle", theta: 38 } },
+    smash:    { name: "Smash",        contact: 2.7,  spec: { mode: "speed", v0: 85, thMin: -40, thMax: 8 } },
+    drop:     { name: "Drop",         contact: 2.5,  spec: { mode: "angle", theta: 4 } },
+    drive:    { name: "Drive",        contact: 1.3,  spec: { mode: "speed", v0: 34, thMin: -6, thMax: 18 } },
+    block:    { name: "Block",        contact: 0.75, spec: { mode: "angle", theta: 24 } },
+    net:      { name: "Netzspiel",    contact: 1.3,  spec: { mode: "angle", theta: 25 } },
+    net_feed: { name: "Zuspiel Netz", contact: 1.2,  spec: { mode: "angle", theta: 62 } },
+    lift:     { name: "Lift",         contact: 0.5,  spec: { mode: "angle", theta: 56 } },
+    push:     { name: "Push",         contact: 1.5,  spec: { mode: "speed", v0: 24, thMin: -20, thMax: 12 } },
+    net_kill: { name: "Kill",         contact: 2.0,  spec: { mode: "speed", v0: 45, thMin: -50, thMax: 5 }, ends: true },
+    kill:     { name: "Kill",         contact: 2.0,  spec: { mode: "speed", v0: 45, thMin: -50, thMax: 5 }, ends: true },
+    feed:     { name: "Zuwurf",       contact: 1.4,  spec: { mode: "angle", theta: 45 } },
+  };
+
+  // Single-shot demos (phase 1): hitter on side A, plays to side B
+  const SHOTS = [
+    { id: "clear", from: { x: 0.6, y: 2.55, z: 5.6 }, to: { x: -1.6, y: 0, z: -6.3 } },
+    { id: "smash", from: { x: 1.1, y: 2.9, z: 4.0 }, to: { x: -2.1, y: 0, z: -4.0 } },
+    { id: "drop", from: { x: 0.7, y: 2.5, z: 5.4 }, to: { x: -1.2, y: 0, z: -1.4 } },
+    { id: "drive", from: { x: 1.9, y: 1.35, z: 2.6 }, to: { x: -2.2, y: 0, z: -5.6 } },
+    { id: "block", from: { x: 1.8, y: 0.85, z: 2.6 }, to: { x: 0.4, y: 0, z: -1.0 } },
+    { id: "net", from: { x: 1.2, y: 1.4, z: 0.45 }, to: { x: 0.9, y: 0, z: -0.55 } },
+    { id: "lift", from: { x: -1.4, y: 0.45, z: 1.3 }, to: { x: 1.6, y: 0, z: -6.2 } },
+    { id: "kill", from: { x: 0.6, y: 2.35, z: 0.55 }, to: { x: -1.2, y: 0, z: -3.4 } },
+  ].map(s => ({ ...s, name: SHOT_TYPES[s.id].name, spec: SHOT_TYPES[s.id].spec }));
+
+  // ---------- Example drill (from the project plan)
+  const EXAMPLE = {
+    name: "Block & Kill – alternierend",
+    format: "singles",
+    players: {
+      feeder: { side: "A", start: "mid_center" },
+      worker: { side: "B", start: "base" }
+    },
+    tempo: { pause_between_shuttles: 1.2 },
+    sequence: [
+      { by: "feeder", shot: "smash", to: "B.mid_forehand", label: "Angriff VH" },
+      { by: "worker", shot: "block", to: "A.front_center", label: "Block" },
+      { by: "feeder", shot: "net_feed", to: "B.front_forehand", label: "Zuspiel Netz VH" },
+      { by: "worker", shot: "net_kill", to: "A.mid_center", label: "Kill!" },
+      { by: "feeder", shot: "smash", to: "B.mid_backhand", label: "Angriff RH" },
+      { by: "worker", shot: "block", to: "A.front_center" },
+      { by: "feeder", shot: "net_feed", to: "B.front_backhand" },
+      { by: "worker", shot: "net_kill", to: "A.mid_center" }
+    ],
+    repeat: 2
+  };
+
+  // ---------- Zones. Depth is measured from the net; forehand follows the handedness of the player on that side.
+  const DEPTH = { front: 1.25, mid: 3.5, back: 5.8, base: 3.7 };
+  const DEPTH_DE = { front: "Vorne", mid: "Mitte", back: "Hinten" };
+  const COL_DE = { forehand: "VH", center: "Mitte", backhand: "RH" };
+
+  function makeZoneResolver(drill) {
+    const lateral = drill.format === "doubles" ? 2.2 : 1.65;
+    const handOf = side => {
+      const p = Object.values(drill.players).find(pl => pl.side === side);
+      return p && String(p.hand || "R").toUpperCase().startsWith("L") ? "L" : "R";
+    };
+    function resolve(ref, defaultSide) {
+      if (typeof ref !== "string") throw new Error(`Zone fehlt oder ist kein Text: ${JSON.stringify(ref)}`);
+      let side = defaultSide, name = ref.trim();
+      const m = name.match(/^([AB])\.(.+)$/i);
+      if (m) { side = m[1].toUpperCase(); name = m[2]; }
+      if (side !== "A" && side !== "B") throw new Error(`Zone „${ref}“ braucht eine Seite, z. B. „B.${name}“.`);
+      const sgn = side === "A" ? 1 : -1;
+      if (name === "base") return { x: 0, z: sgn * DEPTH.base, side, label: `${side} · Base` };
+      const parts = name.split("_");
+      const depth = parts[0], col = parts[1] || "center";
+      if (!(depth in DEPTH_DE) || !(col in COL_DE)) throw new Error(`Unbekannte Zone „${ref}“.`);
+      // facing the net, a right-hander's forehand is +x on side A and -x on side B
+      const fhSign = (side === "A" ? 1 : -1) * (handOf(side) === "L" ? -1 : 1);
+      const x = col === "center" ? 0 : (col === "forehand" ? fhSign : -fhSign) * lateral;
+      return { x, z: sgn * DEPTH[depth], side, label: `${side} · ${DEPTH_DE[depth]} ${COL_DE[col]}` };
+    }
+    return resolve;
+  }
+
+  // ---------- Build a drill timeline: one segment per shot, chained when the ball stays in play
+  function buildDrill(drill) {
+    if (!drill || typeof drill !== "object") throw new Error("Das Skript muss ein JSON-Objekt sein.");
+    if (!drill.players || typeof drill.players !== "object") throw new Error("„players“ fehlt.");
+    if (!Array.isArray(drill.sequence) || !drill.sequence.length) throw new Error("„sequence“ fehlt oder ist leer.");
+    const zone = makeZoneResolver(drill);
+    const pause = Number(drill.tempo?.pause_between_shuttles ?? 1.2);
+    const reps = Math.max(1, Math.min(10, Math.round(Number(drill.repeat ?? 1))));
+    const actorKeys = Object.keys(drill.players);
+
+    // Solve one repetition, then copy it with time offsets
+    const segs = [];
+    let prev = null, t = 0;
+    drill.sequence.forEach((step, i) => {
+      const pl = drill.players[step.by];
+      if (!pl) throw new Error(`Schlag ${i + 1}: Spieler „${step.by}“ ist nicht unter „players“ definiert.`);
+      const type = SHOT_TYPES[step.shot];
+      if (!type) throw new Error(`Schlag ${i + 1}: Schlagart „${step.shot}“ kenne ich nicht.`);
+      const target = zone(step.to, pl.side === "A" ? "B" : "A");
+      if (target.side === pl.side) throw new Error(`Schlag ${i + 1}: Ziel „${step.to}“ liegt auf der eigenen Seite.`);
+
+      // Where is the ball hit? Either intercept the incoming ball, or start a new shuttle at the player's position.
+      let from, chained = false;
+      const incoming = prev && !prev.ends && prev.target.side === pl.side;
+      if (incoming) {
+        const cut = intercept(prev.traj, type.contact, pl.side);
+        prev.cutIndex = cut.index; prev.cutPoint = cut.point;
+        prev.dur = cut.point.t;
+        from = { x: cut.point.x, y: cut.point.y, z: cut.point.z };
+        chained = true;
+        t = prev.start + prev.dur + 0.04;
+      } else {
+        const start = zone(step.from || pl.start || "base", pl.side);
+        from = { x: start.x, y: type.contact, z: start.z };
+        if (prev) t = prev.start + prev.dur + pause;
+      }
+      const traj = solve(from, { x: target.x, y: 0, z: target.z }, type.spec);
+      if (!traj) throw new Error(`Schlag ${i + 1} (${type.name} nach ${step.to}) lässt sich nicht über das Netz spielen.`);
+      const seg = {
+        n: i + 1, by: step.by, actor: actorKeys.indexOf(step.by) === 0 ? "feeder" : "worker",
+        role: step.by, shot: step.shot, type, label: step.label || type.name,
+        target, traj, start: t, dur: traj.land.t, ends: !!type.ends, chained,
+      };
+      segs.push(seg); prev = seg;
+    });
+    // the last ball of a repetition always lands
+    const repLen = segs[segs.length - 1].start + segs[segs.length - 1].dur + pause;
+    const all = [];
+    for (let r = 0; r < reps; r++) for (const s of segs) all.push({ ...s, start: s.start + r * repLen, rep: r + 1 });
+    return { drill, segs: all, perRep: segs.length, reps, total: reps * repLen - pause + 1.0 };
+  }
+
+  // Find where the receiving player meets the ball: the last moment it is still at/above contact height on their side.
+  function intercept(traj, contact, side) {
+    const pts = traj.pts, sideOk = p => side === "A" ? p.z > 0.25 : p.z < -0.25;
+    let idx = -1;
+    for (let i = pts.length - 1; i > 0; i--) if (pts[i].y >= contact && sideOk(pts[i])) { idx = i; break; }
+    if (idx < 0) { // ball never reaches contact height on that side: take it a little before landing
+      idx = Math.max(1, pts.length - 1 - Math.round(0.08 / 0.002));
+    }
+    return { index: idx, point: pts[idx] };
+  }
+
+  // ---------- Three.js scene
+  const stage = document.getElementById("stage");
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x060b16);
+  scene.fog = new THREE.Fog(0x060b16, 24, 52);
+
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.minDistance = 2; controls.maxDistance = 40;
+
+  scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x0a1020, 0.9));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.6); sun.position.set(4, 12, 6); scene.add(sun);
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshLambertMaterial({ color: 0x0b1426 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.y = -0.03; scene.add(floor);
+  const grid = new THREE.GridHelper(60, 60, 0x13213b, 0x101b31); grid.position.y = -0.02; scene.add(grid);
+
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(HALF_W * 2 + 1.6, HALF_L * 2 + 2.4), new THREE.MeshLambertMaterial({ color: 0x15523b }));
+  mat.rotation.x = -Math.PI / 2; scene.add(mat);
+  const inner = new THREE.Mesh(new THREE.PlaneGeometry(HALF_W * 2, HALF_L * 2), new THREE.MeshLambertMaterial({ color: 0x1a6448 }));
+  inner.rotation.x = -Math.PI / 2; inner.position.y = 0.001; scene.add(inner);
+
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xf4f7fb });
+  function line(x1, z1, x2, z2) {
+    const len = Math.hypot(x2 - x1, z2 - z1);
+    const horiz = Math.abs(z2 - z1) < 1e-6;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(horiz ? len + LINE : LINE, horiz ? LINE : len + LINE), lineMat);
+    m.rotation.x = -Math.PI / 2; m.position.set((x1 + x2) / 2, 0.003, (z1 + z2) / 2); scene.add(m);
+  }
+  const eL = HALF_L - LINE / 2, eW = HALF_W - LINE / 2, eS = SINGLES_HW - LINE / 2;
+  for (const s of [-1, 1]) {
+    line(-eW, s * eL, eW, s * eL);
+    line(-eW, s * (LONG_SVC_DBL - LINE / 2), eW, s * (LONG_SVC_DBL - LINE / 2));
+    line(-eW, s * (SHORT_SVC + LINE / 2), eW, s * (SHORT_SVC + LINE / 2));
+    line(s * eW, -eL, s * eW, eL);
+    line(s * eS, -eL, s * eS, eL);
+    line(0, s * SHORT_SVC, 0, s * HALF_L);
+  }
+
+  const nc = document.createElement("canvas"); nc.width = 64; nc.height = 64;
+  const nx = nc.getContext("2d"); nx.strokeStyle = "rgba(230,236,245,0.55)"; nx.lineWidth = 2;
+  for (let i = 0; i <= 64; i += 16) { nx.beginPath(); nx.moveTo(i, 0); nx.lineTo(i, 64); nx.stroke(); nx.beginPath(); nx.moveTo(0, i); nx.lineTo(64, i); nx.stroke(); }
+  const netTex = new THREE.CanvasTexture(nc); netTex.wrapS = netTex.wrapT = THREE.RepeatWrapping; netTex.repeat.set(6.1 / 0.08, 0.76 / 0.08);
+  const net = new THREE.Mesh(new THREE.PlaneGeometry(HALF_W * 2, 0.76), new THREE.MeshBasicMaterial({ map: netTex, transparent: true, side: THREE.DoubleSide, depthWrite: false, color: 0x9fb2cc }));
+  net.position.set(0, NET_CENTER - 0.38, 0); scene.add(net);
+  const tape = new THREE.Mesh(new THREE.BoxGeometry(HALF_W * 2, 0.075, 0.015), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  tape.position.set(0, NET_CENTER - 0.0375, 0); scene.add(tape);
+  const postMat = new THREE.MeshLambertMaterial({ color: 0xc9d2e0 });
+  for (const s of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, NET_POST, 12), postMat);
+    post.position.set(s * HALF_W, NET_POST / 2, 0); scene.add(post);
+  }
+
+  const shuttle = new THREE.Group();
+  const skirt = new THREE.Mesh(new THREE.ConeGeometry(0.034, 0.07, 18, 1, true), new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.92 }));
+  skirt.rotation.x = Math.PI / 2; shuttle.add(skirt);
+  const cork = new THREE.Mesh(new THREE.SphereGeometry(0.014, 16, 12), new THREE.MeshLambertMaterial({ color: 0xfff6dc }));
+  cork.position.z = 0.035; shuttle.add(cork);
+  shuttle.scale.setScalar(2.4); shuttle.visible = false; scene.add(shuttle);
+
+  const shadowDot = new THREE.Mesh(new THREE.CircleGeometry(0.07, 24), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false }));
+  shadowDot.rotation.x = -Math.PI / 2; shadowDot.position.y = 0.006; shadowDot.visible = false; scene.add(shadowDot);
+
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scene.add(flash);
+
+  // ---------- Visual objects per shot
+  const COLORS = { single: 0xffd23f, feeder: 0x4da3ff, worker: 0xff9a2e, in: 0x39d98a, out: 0xff4d5e };
+  const CSS = { feeder: "#4da3ff", worker: "#ff9a2e" };
+  let visuals = []; // { trail, glow, ground, traj, arc, len, endIndex }
+  let marks = [];   // { group, ring?, born }
+
+  function disposeObj(o) { scene.remove(o); o.traverse(c => { c.geometry?.dispose(); if (c.material) { c.material.map?.dispose(); c.material.dispose(); } }); }
+  function clearVisuals() {
+    for (const v of visuals) for (const o of [v.trail, v.glow, v.ground]) disposeObj(o);
+    for (const m of marks) disposeObj(m.group);
+    visuals = []; marks = [];
+  }
+
+  // Trail for traj.pts[0..endIndex]
+  function makeVisual(traj, endIndex, color) {
+    const pts = traj.pts.slice(0, endIndex + 1);
+    const step = Math.max(1, Math.floor(pts.length / 160));
+    const sampled = pts.filter((_, i) => i % step === 0);
+    if (sampled[sampled.length - 1] !== pts[pts.length - 1]) sampled.push(pts[pts.length - 1]);
+    if (sampled.length < 2) sampled.push({ ...sampled[0], y: sampled[0].y + 0.001 });
+    const curve = new THREE.CatmullRomCurve3(sampled.map(p => new THREE.Vector3(p.x, p.y, p.z)));
+    const SEG = 320;
+    const trail = new THREE.Mesh(new THREE.TubeGeometry(curve, SEG, 0.018, 8, false), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }));
+    const glow = new THREE.Mesh(new THREE.TubeGeometry(curve, SEG, 0.06, 10, false), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending }));
+    trail.userData = { seg: SEG, radial: 8 }; glow.userData = { seg: SEG, radial: 10 };
+    const ground = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p.x, 0.007, p.z))), new THREE.LineDashedMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, dashSize: 0.18, gapSize: 0.12 }));
+    ground.computeLineDistances();
+    scene.add(trail, glow, ground);
+    const arc = [0]; let s = 0;
+    for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i]; s += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z); arc.push(s); }
+    const v = { trail, glow, ground, pts, arc, len: s || 1, endIndex };
+    reveal(v, 0, 0);
+    visuals.push(v);
+    return v;
+  }
+  function reveal(v, idx, frac) {
+    const f = Math.min(1, Math.max(0, frac));
+    for (const o of [v.trail, v.glow]) { const { seg, radial } = o.userData; o.geometry.setDrawRange(0, Math.floor(f * seg) * radial * 6); }
+    v.ground.geometry.setDrawRange(0, Math.max(0, idx + 1));
+  }
+  function dimVisual(v) { v.trail.material.opacity = 0.35; v.glow.material.opacity = 0.05; v.ground.material.opacity = 0.12; }
+
+  function addLandingMark(p, isIn, nowMs) {
+    const group = new THREE.Group(); group.position.set(p.x, 0.008, p.z);
+    const col = isIn ? COLORS.in : COLORS.out;
+    const imprint = new THREE.Mesh(new THREE.CircleGeometry(0.11, 32), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95, depthWrite: false }));
+    imprint.rotation.x = -Math.PI / 2; imprint.scale.set(1, 1.6, 1);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.24, 48), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2;
+    group.add(imprint, ring); scene.add(group);
+    marks.push({ group, ring, born: nowMs });
+  }
+
+  // Numbered marker flat on the floor, with a thin stalk up to the contact point when the ball was taken in the air
+  function addNumberMark(p, n, color, nowMs) {
+    let x = p.x, z = p.z;
+    for (const m of marks) if (m.numbered && Math.hypot(m.x - x, m.z - z) < 0.4) { x += 0.46; }
+    const c = document.createElement("canvas"); c.width = c.height = 128;
+    const g = c.getContext("2d");
+    g.fillStyle = color; g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#08101f"; g.font = "700 72px 'Barlow Condensed', 'Arial Narrow', sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(String(n), 64, 69);
+    const tex = new THREE.CanvasTexture(c);
+    const group = new THREE.Group(); group.position.set(x, 0.01, z);
+    const disc = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+    disc.rotation.x = -Math.PI / 2; group.add(disc);
+    if (p.y > 0.05) {
+      const stalk = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p.x - x, 0, p.z - z), new THREE.Vector3(p.x - x, p.y, p.z - z)]), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 }));
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), new THREE.MeshBasicMaterial({ color }));
+      dot.position.set(p.x - x, p.y, p.z - z);
+      group.add(stalk, dot);
+    }
+    scene.add(group);
+    marks.push({ group, born: nowMs, numbered: true, x, z });
+  }
+
+  // ---------- Camera presets
+  const CAMS = {
+    tv:     { name: "TV", pos: [0, 10.5, 15.5], tgt: [0, 1.6, -1.8] },
+    side:   { name: "Seite", pos: [12.5, 4.6, 0.5], tgt: [0, 0.6, 0] },
+    top:    { name: "Oben", pos: [0, 21, 0.01], tgt: [0, 0, 0] },
+    worker: { name: "Gegenseite", pos: [0, 3.4, -11.5], tgt: [0, 1.0, 1.5] },
+  };
+  // drills happen low and close to the net, so the TV view sits closer there
+  const DRILL_TV = { pos: [0, 8.2, 10.8], tgt: [0, 0.6, -0.8] };
+  const camFor = id => (id === "tv" && state.mode === "drill") ? DRILL_TV : CAMS[id];
+  let tween = null;
+  // simulation clock in ms: advances with real time in the live view, with a fixed step during video export
+  let clock = 0;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function flyTo(pos, tgt, dur = 1.1) {
+    if (reduceMotion || dur === 0) { camera.position.set(...pos); controls.target.set(...tgt); controls.update(); tween = null; return; }
+    tween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: new THREE.Vector3(...pos), t1: new THREE.Vector3(...tgt), start: clock, dur: dur * 1000 };
+  }
+  const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+  // ---------- UI helpers
+  const $ = id => document.getElementById(id);
+  const fmt = (n, d = 0) => n.toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+  function setStats(pairs) { pairs.forEach(([k, v], i) => { $(`k${i + 1}`).textContent = k; $(`v${i + 1}`).textContent = v; }); }
+  function setCall(main, small, cls) {
+    const c = $("call");
+    $("callMain").textContent = main; $("callDist").textContent = small;
+    c.classList.remove("out", "feeder", "worker", "wait");
+    if (cls) c.classList.add(cls);
+  }
+  function hideCall() { $("call").classList.add("wait"); }
+
+  function chips(containerId, items, current, onPick) {
+    const box = $(containerId);
+    for (const it of items) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.id = `${containerId}-${it.id}`; b.textContent = it.label;
+      b.setAttribute("aria-pressed", String(it.id === current));
+      b.addEventListener("click", () => {
+        box.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c === b)));
+        onPick(it.id);
+      });
+      box.appendChild(b);
+    }
+  }
+
+  // ---------- State
+  const state = {
+    mode: "drill", cam: "tv", speed: 0.5, paused: false,
+    // single
+    shot: SHOTS[0], target: null, single: null, singleT: 0, singleLanded: false,
+    // drill
+    drillData: null, drillT: 0, segIdx: -1, segDone: -1, lastRep: 0,
+  };
+
+  // ---------- Single-shot mode
+  function callFor(p, side) {
+    const sgn = side === "A" ? 1 : -1;
+    const isIn = p.z * sgn >= 0 && Math.abs(p.x) <= SINGLES_HW && Math.abs(p.z) <= HALF_L;
+    const dx = SINGLES_HW - Math.abs(p.x), dz = HALF_L - Math.abs(p.z);
+    const d = isIn ? Math.min(dx, dz) : Math.max(-dx, -dz, p.z * sgn < 0 ? Math.abs(p.z) : 0);
+    return { isIn, cm: Math.round(Math.abs(d) * 100) };
+  }
+
+  function playSingle() {
+    const shot = state.shot, to = state.target || shot.to;
+    const traj = solve(shot.from, to, shot.spec);
+    clearVisuals(); hideCall();
+    if (!traj) { $("shotName").textContent = `${shot.name}: Ziel nicht erreichbar`; return; }
+    state.single = { traj, vis: makeVisual(traj, traj.pts.length - 1, COLORS.single) };
+    state.singleT = -0.35; state.singleLanded = false; state.paused = false; syncPause();
+    $("shotName").textContent = shot.name;
+    $("shotName").style.borderTopColor = "";
+    setStats([["Abflug", `${fmt(traj.v0 * 3.6)} km/h`], ["Aufprall", "–"], ["Flugzeit", "–"], ["Scheitel", "–"]]);
+    flash.position.set(shot.from.x, shot.from.y, shot.from.z); flash.material.color.setHex(COLORS.single);
+    shuttle.visible = true; shadowDot.visible = true;
+    const c = CAMS[state.cam]; flyTo(c.pos, c.tgt, 0.6);
+  }
+
+  function singleLanded(nowMs) {
+    const { traj } = state.single, p = traj.land;
+    const { isIn, cm } = callFor(p, "B");
+    addLandingMark(p, isIn, nowMs);
+    setCall(isIn ? "IN" : "OUT", isIn ? `${fmt(cm)} cm innen` : `${fmt(cm)} cm aus`, isIn ? null : "out");
+    setStats([["Abflug", `${fmt(traj.v0 * 3.6)} km/h`], ["Aufprall", `${fmt(p.v * 3.6)} km/h`], ["Flugzeit", `${fmt(p.t, 2)} s`], ["Scheitel", `${fmt(traj.apex, 2)} m`]]);
+    const from = traj.from, dir = new THREE.Vector3(from.x - p.x, 0, from.z - p.z).normalize();
+    const camPos = [p.x + dir.x * 3.8 + 1.4, 1.9, p.z + dir.z * 3.8];
+    state.singleLandedAt = clock;
+    state.pendingZoom = { at: clock + 350, pos: camPos, tgt: [p.x, 0, p.z], ref: state.single };
+  }
+
+  // ---------- Drill mode
+  let drillSource = EXAMPLE;
+  function loadDrill(src) {
+    const data = buildDrill(src);
+    drillSource = src;
+    state.drillData = data;
+    restartDrill();
+  }
+  function restartDrill() {
+    clearVisuals(); hideCall();
+    const d = state.drillData;
+    state.drillT = -0.4; state.segIdx = -1; state.segDone = -1; state.lastRep = 0;
+    state.paused = false; syncPause();
+    $("shotName").textContent = d.drill.name || "Drill";
+    $("shotName").style.borderTopColor = "";
+    setStats([["Schlag", "–"], ["Ziel", "–"], ["Abflug", "–"], ["Durchgang", `1/${d.reps}`]]);
+    shuttle.visible = false; shadowDot.visible = false;
+    const c = camFor(state.cam); flyTo(c.pos, c.tgt, 0.6);
+  }
+
+  function startSegment(seg, nowMs) {
+    if (seg.rep !== state.lastRep) {
+      // new repetition: clear the previous pattern so the markers stay readable
+      if (state.lastRep) clearVisuals();
+      state.lastRep = seg.rep;
+    }
+    const endIndex = seg.cutIndex ?? seg.traj.pts.length - 1;
+    seg.vis = makeVisual(seg.traj, endIndex, COLORS[seg.actor]);
+    const f = seg.traj.from;
+    flash.position.set(f.x, f.y, f.z); flash.material.color.setHex(COLORS[seg.actor]);
+    flash.userData.born = state.drillT;
+    shuttle.visible = true; shadowDot.visible = true;
+    setCall(`${seg.n}/${state.drillData.perRep}`, seg.label, seg.actor);
+    $("shotName").style.borderTopColor = CSS[seg.actor];
+    setStats([["Schlag", seg.type.name], ["Ziel", seg.target.label], ["Abflug", `${fmt(seg.traj.v0 * 3.6)} km/h`], ["Durchgang", `${seg.rep}/${state.drillData.reps}`]]);
+  }
+
+  function endSegment(seg, nowMs) {
+    const endIndex = seg.cutIndex ?? seg.traj.pts.length - 1;
+    const p = seg.traj.pts[endIndex];
+    addNumberMark(p, seg.n, CSS[seg.actor], nowMs);
+    if (seg.cutIndex == null) {
+      const { isIn } = callFor(p, seg.target.side);
+      addLandingMark(p, isIn, nowMs);
+      shuttle.visible = false; shadowDot.visible = false;
+    }
+    dimVisual(seg.vis);
+  }
+
+  // ---------- Controls
+  chips("modes", [{ id: "drill", label: "Drill" }, { id: "single", label: "Einzelschlag" }], "drill", id => setMode(id));
+  chips("shots", SHOTS.map(s => ({ id: s.id, label: s.name })), SHOTS[0].id, id => { state.shot = SHOTS.find(s => s.id === id); state.target = null; playSingle(); });
+  chips("cams", Object.entries(CAMS).map(([id, c]) => ({ id, label: c.name })), "tv", id => { state.cam = id; const c = camFor(id); flyTo(c.pos, c.tgt); });
+  chips("speeds", [{ id: "1", label: "1×" }, { id: "0.5", label: "½×" }, { id: "0.25", label: "¼×" }], "0.5", id => { state.speed = parseFloat(id); });
+  $("replay").addEventListener("click", () => state.mode === "drill" ? restartDrill() : playSingle());
+  $("pause").addEventListener("click", () => { state.paused = !state.paused; syncPause(); });
+  function syncPause() { $("pause").textContent = state.paused ? "Weiter" : "Pause"; }
+
+  function setMode(mode) {
+    state.mode = mode;
+    $("shots").hidden = mode !== "single";
+    $("openScript").hidden = mode !== "drill";
+    $("legend").hidden = mode !== "drill";
+    $("progress").hidden = mode !== "drill";
+    $("eyebrow").textContent = mode === "drill" ? "Prototyp · Drill-Ablauf" : "Prototyp · Einzelschlag";
+    $("hint").textContent = mode === "drill"
+      ? "Ziehen dreht die Kamera, zwei Finger zoomen. Unter „Skript“ kannst du den Drill als JSON ändern."
+      : "Tippe ins gegnerische Feld, um das Ziel zu setzen. Ziehen dreht die Kamera, zwei Finger zoomen.";
+    if (mode === "single") { $("drawer").hidden = true; playSingle(); }
+    else restartDrill();
+  }
+
+  // Script drawer
+  const fmtJSON = o => JSON.stringify(o, null, 2).replace(/\{\n\s+("by"[^}]+?)\n\s+\}/g, (m) => m.replace(/\n\s+/g, " "));
+  $("openScript").addEventListener("click", () => { $("script").value = fmtJSON(drillSource); $("scriptErr").textContent = ""; $("drawer").hidden = false; $("script").focus(); });
+  $("closeScript").addEventListener("click", () => { $("drawer").hidden = true; });
+  $("resetScript").addEventListener("click", () => { $("script").value = fmtJSON(EXAMPLE); $("scriptErr").textContent = ""; });
+  $("applyScript").addEventListener("click", () => {
+    let src;
+    try { src = JSON.parse($("script").value); }
+    catch (e) { $("scriptErr").textContent = `Kein gültiges JSON: ${e.message}`; return; }
+    try { loadDrill(src); $("scriptErr").textContent = ""; if (window.innerWidth < 700) $("drawer").hidden = true; }
+    catch (e) { $("scriptErr").textContent = e.message; }
+  });
+
+  // Tap on the far half to set a custom target (single mode)
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  let down = null;
+  renderer.domElement.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; });
+  renderer.domElement.addEventListener("pointerup", e => {
+    if (state.mode !== "single" || !down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(mat)[0];
+    if (!hit || hit.point.z > -0.3) return;
+    state.target = { x: hit.point.x, y: 0, z: hit.point.z };
+    playSingle();
+  });
+
+  // ---------- Loop
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false); camera.aspect = w / h;
+    camera.fov = w / h < 0.8 ? 62 : 40; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage); resize();
+
+  const tmp = new THREE.Vector3();
+  function sampleAt(pts, arc, t) {
+    let lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; pts[m].t <= t ? lo = m : hi = m; }
+    const a = pts[lo], b = pts[hi], f = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
+    return { idx: lo, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f, vx: b.x - a.x, vy: b.y - a.y, vz: b.z - a.z, arc: arc[lo] + (arc[hi] - arc[lo]) * f };
+  }
+  function placeShuttle(s) {
+    shuttle.position.set(s.x, s.y, s.z);
+    if (Math.hypot(s.vx, s.vy, s.vz) > 1e-6) shuttle.lookAt(tmp.set(s.x + s.vx, s.y + s.vy, s.z + s.vz));
+    shadowDot.position.set(s.x, 0.006, s.z);
+    shadowDot.material.opacity = 0.2 + 0.3 * Math.max(0, 1 - s.y / 4);
+  }
+  function setFlash(since) {
+    flash.material.opacity = since >= 0 && since < 0.12 ? 0.9 * (1 - since / 0.12) : 0;
+    flash.scale.setScalar(1 + Math.max(0, since) * 8);
+  }
+
+  // One simulation step. dt is in seconds of wall time (fixed 1/fps during export).
+  function update(dt) {
+    clock += dt * 1000;
+    const now = clock;
+    const step = state.paused ? 0 : dt * state.speed;
+    if (tween) {
+      const k = Math.min(1, (now - tween.start) / tween.dur), e = ease(k);
+      camera.position.lerpVectors(tween.p0, tween.p1, e); controls.target.lerpVectors(tween.t0, tween.t1, e);
+      if (k >= 1) tween = null;
+    }
+    if (state.pendingZoom && now >= state.pendingZoom.at) {
+      const z = state.pendingZoom; state.pendingZoom = null;
+      if (state.mode === "single" && state.single === z.ref) flyTo(z.pos, z.tgt, 1.3);
+    }
+
+    if (state.mode === "single" && state.single && !state.singleLanded) {
+      state.singleT += step;
+      const { traj, vis } = state.single, T = traj.land.t;
+      const s = sampleAt(vis.pts, vis.arc, Math.max(0, Math.min(T, state.singleT)));
+      placeShuttle(s); reveal(vis, s.idx, s.arc / vis.len); setFlash(state.singleT);
+      if (state.singleT >= T) { state.singleLanded = true; singleLanded(now); }
+    }
+
+    if (state.mode === "drill" && state.drillData) {
+      const d = state.drillData;
+      state.drillT += step;
+      const t = state.drillT;
+      // start segments whose time has come, close the ones that are done
+      while (state.segIdx + 1 < d.segs.length && t >= d.segs[state.segIdx + 1].start) {
+        if (state.segIdx > state.segDone) { endSegment(d.segs[state.segIdx], now); state.segDone = state.segIdx; }
+        state.segIdx++; startSegment(d.segs[state.segIdx], now);
+      }
+      const seg = d.segs[state.segIdx];
+      if (seg && state.segIdx > state.segDone) {
+        const lt = Math.min(seg.dur, t - seg.start);
+        const s = sampleAt(seg.vis.pts, seg.vis.arc, lt);
+        placeShuttle(s); reveal(seg.vis, s.idx, s.arc / seg.vis.len);
+        if (t - seg.start >= seg.dur && seg.cutIndex == null) { endSegment(seg, now); state.segDone = state.segIdx; }
+      }
+      setFlash(t - (flash.userData.born ?? -9));
+      $("progressBar").style.width = `${Math.max(0, Math.min(100, (t / d.total) * 100))}%`;
+      if (t >= d.total + 1.5 && !state.paused && !exporting) restartDrill(); // loop
+    }
+
+    for (const m of marks) {
+      if (!m.ring) continue;
+      const age = (now - m.born) / 1000, k = Math.min(1, age / 0.6);
+      m.ring.scale.setScalar(0.4 + 1.2 * (1 - Math.pow(1 - k, 3)) + 0.06 * Math.sin(age * 5));
+      m.ring.material.opacity = 0.55 + 0.35 * Math.cos(age * 4);
+    }
+    controls.update();
+  }
+
+  let last = performance.now(), exporting = false;
+  function frame(t) {
+    const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    if (!exporting) { update(dt); renderer.render(scene, camera); }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Broadcast graphics drawn into the video (mirrors the on-screen HUD)
+  function drawHUD(ctx, w, h) {
+    const s = Math.min(w, h) / 1080, portrait = h > w * 1.2;
+    const css = getComputedStyle(document.documentElement), C = n => css.getPropertyValue(n).trim();
+    const F = (wt, px) => `${wt} ${Math.round(px)}px "Barlow Condensed", "Arial Narrow", sans-serif`;
+    const spacing = px => { if ("letterSpacing" in ctx) ctx.letterSpacing = `${px}px`; };
+    const padX = 56 * s;
+
+    // top: shade, eyebrow, title, legend
+    const shadeH = (portrait ? 420 : 260) * s;
+    const g = ctx.createLinearGradient(0, 0, 0, shadeH);
+    g.addColorStop(0, "rgba(4,8,18,0.8)"); g.addColorStop(1, "rgba(4,8,18,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, shadeH);
+    let y = (portrait ? 150 : 70) * s;
+    ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+    ctx.fillStyle = C("--accent"); ctx.font = F(600, 26 * s); spacing(4 * s);
+    ctx.fillText(state.mode === "drill" ? "BADMINTON DRILL" : "EINZELSCHLAG", padX, y);
+    const title = (state.mode === "drill" ? (state.drillData?.drill.name || "Drill") : state.shot.name).toUpperCase();
+    let ts = 64 * s; ctx.font = F(700, ts); spacing(1 * s);
+    while (ctx.measureText(title).width > w - 2 * padX && ts > 34 * s) { ts -= 2 * s; ctx.font = F(700, ts); }
+    y += ts * 1.0 + 4 * s; ctx.fillStyle = C("--fg"); ctx.fillText(title, padX, y);
+    if (state.mode === "drill") {
+      y += 44 * s; ctx.font = F(600, 22 * s); spacing(3 * s);
+      let x = padX;
+      for (const [label, col] of [["FEEDER", C("--feeder")], ["WORKER", C("--worker")]]) {
+        ctx.fillStyle = col; ctx.fillRect(x, y - 9 * s, 30 * s, 6 * s);
+        ctx.fillStyle = C("--muted"); ctx.fillText(label, x + 40 * s, y);
+        x += 40 * s + ctx.measureText(label).width + 36 * s;
+      }
+    }
+
+    // lower third
+    const bottomGap = (portrait ? 260 : 64) * s;
+    const statsH = 84 * s, nameH = 96 * s, gap = 10 * s;
+    const yStats = h - bottomGap - statsH, yName = yStats - gap - nameH;
+    const para = (x, yy, ww, hh, l, r) => { ctx.beginPath(); ctx.moveTo(x + l, yy); ctx.lineTo(x + ww, yy); ctx.lineTo(x + ww - r, yy + hh); ctx.lineTo(x, yy + hh); ctx.closePath(); };
+
+    // the drill title already sits at the top of the video, so the lower third names the current shot
+    const live = !$("call").classList.contains("wait");
+    let name = (state.mode === "drill" && live ? $("v1").textContent : $("shotName").textContent).toUpperCase();
+    ctx.font = F(700, 48 * s); spacing(1.5 * s);
+    const maxName = w - 2 * padX - 230 * s;
+    if (ctx.measureText(name).width > maxName) { while (name.length > 3 && ctx.measureText(name + "…").width > maxName) name = name.slice(0, -1); name += "…"; }
+    const nameW = ctx.measureText(name).width + 50 * s;
+    para(padX, yName, nameW, nameH, 0, 18 * s);
+    ctx.fillStyle = C("--panel-solid"); ctx.fill();
+    ctx.save(); ctx.clip(); ctx.fillStyle = $("shotName").style.borderTopColor || C("--accent"); ctx.fillRect(padX, yName, nameW, 6 * s); ctx.restore();
+    ctx.fillStyle = C("--fg"); ctx.fillText(name, padX + 22 * s, yName + nameH / 2 + 19 * s);
+
+    const call = $("call");
+    if (!call.classList.contains("wait")) {
+      const bg = call.classList.contains("out") ? C("--out") : call.classList.contains("feeder") ? C("--feeder") : call.classList.contains("worker") ? C("--worker") : C("--in");
+      const main = $("callMain").textContent, small = $("callDist").textContent;
+      ctx.font = F(700, 50 * s); const w1 = ctx.measureText(main).width;
+      ctx.font = F(600, 22 * s); const w2 = ctx.measureText(small).width;
+      const cw = Math.max(170 * s, Math.max(w1, w2) + 72 * s), cx = padX + nameW - 14 * s;
+      para(cx, yName, cw, nameH, 18 * s, 18 * s); ctx.fillStyle = bg; ctx.fill();
+      ctx.fillStyle = "#06101e"; ctx.textAlign = "center";
+      ctx.font = F(700, 50 * s); spacing(1 * s); ctx.fillText(main, cx + cw / 2, yName + 56 * s);
+      ctx.font = F(600, 22 * s); spacing(1 * s); ctx.fillText(small, cx + cw / 2, yName + 84 * s);
+      ctx.textAlign = "left";
+    }
+
+    const cells = [1, 2, 3, 4].map(i => [$(`k${i}`).textContent.toUpperCase(), $(`v${i}`).textContent]);
+    const widths = cells.map(([k, v]) => { ctx.font = F(600, 19 * s); spacing(3 * s); const a = ctx.measureText(k).width; ctx.font = F(600, 36 * s); spacing(0.5 * s); return Math.max(a, ctx.measureText(v).width) + 40 * s; });
+    const total = widths.reduce((a, b) => a + b, 0);
+    ctx.fillStyle = "rgba(9,16,32,0.88)"; ctx.fillRect(padX, yStats, total, statsH);
+    let x = padX;
+    cells.forEach(([k, v], i) => {
+      if (i) { ctx.fillStyle = C("--line"); ctx.fillRect(x, yStats, 1.5 * s, statsH); }
+      ctx.fillStyle = C("--muted"); ctx.font = F(600, 19 * s); spacing(3 * s); ctx.fillText(k, x + 20 * s, yStats + 30 * s);
+      ctx.fillStyle = C("--fg"); ctx.font = F(600, 36 * s); spacing(0.5 * s); ctx.fillText(v, x + 20 * s, yStats + 68 * s);
+      x += widths[i];
+    });
+    spacing(0);
+  }
+
+  // ---------- MP4 export: fixed time step, WebCodecs H.264 + mp4-muxer
+  async function exportVideo({ w, h, fps, onProgress, preferH264Only = false }) {
+    if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") throw new Error("Dieser Browser kann hier kein MP4 erzeugen. Probier es in Chrome, Edge oder einem aktuellen Safari.");
+    if (typeof Mp4Muxer === "undefined") throw new Error("Der MP4-Baustein konnte nicht geladen werden. Lade die Seite neu und versuch es nochmal.");
+    const bitrate = Math.round(w * h * fps * 0.14);
+    // H.264 first (plays everywhere); VP9 in MP4 only as a fallback for browsers without an H.264 encoder
+    let config = null, muxCodec = "avc";
+    const candidates = [
+      ...["avc1.640033", "avc1.64002a", "avc1.640028", "avc1.4d0028", "avc1.42e01f"].map(codec => ({ c: { codec, width: w, height: h, bitrate, framerate: fps, avc: { format: "avc" } }, m: "avc" })),
+      ...(preferH264Only ? [] : ["vp09.00.41.08", "vp09.00.40.08"].map(codec => ({ c: { codec, width: w, height: h, bitrate, framerate: fps }, m: "vp9" }))),
+    ];
+    for (const { c, m } of candidates) {
+      try { if ((await VideoEncoder.isConfigSupported(c)).supported) { config = c; muxCodec = m; break; } } catch (e) { /* try next */ }
+    }
+    if (!config) throw new Error("Dieser Browser kann hier kein MP4-Video kodieren. Probier es in Chrome, Edge oder einem aktuellen Safari.");
+    try { await Promise.all([document.fonts.load(`700 40px "Barlow Condensed"`), document.fonts.load(`600 40px "Barlow Condensed"`)]); } catch (e) { /* fallback fonts */ }
+
+    const muxer = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(), video: { codec: muxCodec, width: w, height: h, frameRate: fps }, fastStart: "in-memory" });
+    let encErr = null;
+    const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encErr = e; } });
+    enc.configure(config);
+
+    exporting = true;
+    const prevPR = renderer.getPixelRatio(), prevSpeed = state.speed;
+    const comp = document.createElement("canvas"); comp.width = w; comp.height = h;
+    const ctx = comp.getContext("2d");
+    try {
+      renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+      camera.aspect = w / h; camera.fov = w / h < 0.8 ? 62 : 40; camera.updateProjectionMatrix();
+      if (state.mode === "drill") restartDrill(); else playSingle();
+      state.paused = false; syncPause();
+      const cam = camFor(state.cam); flyTo(cam.pos, cam.tgt, 0);
+      const dt = 1 / fps;
+      const drill = state.mode === "drill";
+      const est = drill ? (state.drillData.total + 0.7) / state.speed : (state.single ? state.single.traj.land.t + 0.35 : 1) / state.speed + 3;
+      const done = () => drill ? state.drillT >= state.drillData.total + 0.3 : (!state.single || (state.singleLanded && clock - state.singleLandedAt >= 3000));
+      let i = 0;
+      while (!done() && i < fps * 300) {
+        update(dt);
+        renderer.render(scene, camera);
+        ctx.drawImage(renderer.domElement, 0, 0, w, h);
+        drawHUD(ctx, w, h);
+        const vf = new VideoFrame(comp, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+        enc.encode(vf, { keyFrame: i % (fps * 2) === 0 });
+        vf.close();
+        i++;
+        if (encErr) throw encErr;
+        if (i % 3 === 0) {
+          onProgress?.(Math.min(0.98, i * dt / est));
+          await new Promise(r => setTimeout(r, 0));
+          while (enc.encodeQueueSize > 6) await new Promise(r => setTimeout(r, 4));
+        }
+      }
+      await enc.flush();
+      if (encErr) throw encErr;
+      muxer.finalize();
+      onProgress?.(1);
+      return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), seconds: i / fps, codec: muxCodec };
+    } finally {
+      try { enc.close(); } catch (e) { /* already closed */ }
+      state.speed = prevSpeed;
+      renderer.setPixelRatio(prevPR); resize();
+      exporting = false; last = performance.now();
+    }
+  }
+
+  // Export panel
+  const FORMATS = { portrait: { label: "Hochformat 9:16", w: 1080, h: 1920 }, landscape: { label: "Querformat 16:9", w: 1920, h: 1080 }, square: { label: "Quadrat 1:1", w: 1080, h: 1080 } };
+  const exp = { format: "portrait", fps: 30, file: null, name: "" };
+  chips("formats", Object.entries(FORMATS).map(([id, f]) => ({ id, label: f.label })), "portrait", id => { exp.format = id; });
+  chips("fpsOpts", [{ id: "30", label: "30" }, { id: "60", label: "60" }], "30", id => { exp.fps = parseInt(id, 10); });
+  const setStatus = (msg, bad = false) => { $("exportStatus").textContent = msg; $("exportStatus").classList.toggle("bad", bad); };
+  $("openExport").addEventListener("click", () => { $("drawer").hidden = true; $("exportPanel").hidden = false; });
+  $("closeExport").addEventListener("click", () => { $("exportPanel").hidden = true; });
+  const slug = str => str.toLowerCase().replace(/[äöüß]/g, c => ({ ä: "ae", ö: "oe", ü: "ue", ß: "ss" })[c]).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "drill";
+
+  async function offerSave() {
+    if (!exp.file) return;
+    const downloads = window.claude?.use ? await window.claude.use("downloads") : null;
+    if (!downloads) { setStatus("Speichern ist in dieser Ansicht nicht möglich. Öffne die Seite in claude.ai.", true); return; }
+    try {
+      await downloads.save({ filename: exp.name, data: exp.file });
+      setStatus(`Gespeichert: ${exp.name}`);
+    } catch (e) {
+      const code = e?.code;
+      if (code === "declined") setStatus("Nicht gespeichert. Du kannst es mit „Speichern“ nochmal anbieten.");
+      else if (code === "rate_limited") setStatus("Gerade ist schon ein Speichern-Dialog offen. Versuch es gleich nochmal.");
+      else setStatus("Speichern ist hier gerade nicht möglich.", true);
+    }
+  }
+  $("saveExport").addEventListener("click", offerSave);
+  $("startExport").addEventListener("click", async () => {
+    const f = FORMATS[exp.format];
+    $("startExport").disabled = true; $("saveExport").hidden = true; exp.file = null;
+    setStatus("Rendere Bild für Bild …"); $("exportBar").style.width = "0%";
+    try {
+      const { blob, seconds, codec } = await exportVideo({ w: f.w, h: f.h, fps: exp.fps, onProgress: p => { $("exportBar").style.width = `${Math.round(p * 100)}%`; setStatus(`Rendere Bild für Bild … ${Math.round(p * 100)} %`); } });
+      const base = state.mode === "drill" ? state.drillData.drill.name || "drill" : state.shot.name;
+      exp.file = blob; exp.name = `${slug(base)}-${exp.format === "portrait" ? "hochformat" : exp.format === "landscape" ? "querformat" : "quadrat"}.mp4`;
+      setStatus(`Fertig: ${fmt(seconds, 1)} s, ${fmt(blob.size / 1048576, 1)} MB.` + (codec === "vp9" ? " Dein Browser hat VP9 statt H.264 genutzt, das spielen ältere iPhones eventuell nicht ab." : ""));
+      $("saveExport").hidden = false;
+      await offerSave();
+    } catch (e) {
+      setStatus(e.message || "Das Video konnte nicht erstellt werden.", true);
+    } finally {
+      $("startExport").disabled = false;
+    }
+  });
+
+  camera.position.set(...CAMS.tv.pos); controls.target.set(...CAMS.tv.tgt); controls.update();
+  try { loadDrill(EXAMPLE); } catch (e) { $("shotName").textContent = e.message; }
+  setMode("drill");
+  requestAnimationFrame(frame);
+
+  window.flugbahn = { solve, simulate, buildDrill, exportVideo, SHOTS, EXAMPLE, state };
+})();
+</script>
+</body>
+</html>
