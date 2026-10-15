@@ -28,7 +28,12 @@ Die Seiten funktionieren auch per Doppelklick direkt aus dem Dateisystem. three.
 
 Der MP4-Export nutzt WebCodecs. Das können aktuelle Versionen von Chrome, Edge und Safari.
 
-Über **GitHub Pages** (Einstellungen → Pages → Branch `main`, Ordner `/`) lässt sich das Ganze ohne eigenen Server veröffentlichen.
+## Online-Version
+
+Bei jedem Push auf `main` prüft ein GitHub-Workflow (`.github/workflows/pages.yml`) alle Drills und veröffentlicht die Seiten auf GitHub Pages:
+https://badmintonroa.github.io/Badminton-Animator/
+
+Für einen eigenen Fork einmalig unter **Settings → Pages → Build and deployment → Source** „GitHub Actions“ auswählen.
 
 ## Das Drill-Skript
 
