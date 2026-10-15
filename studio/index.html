@@ -206,8 +206,8 @@ body {
       <div class="stats">
         <div class="stat"><span id="k1">Schlag</span><b id="v1">–</b></div>
         <div class="stat"><span id="k2">Ziel</span><b id="v2">–</b></div>
-        <div class="stat"><span id="k3">Abflug</span><b id="v3">–</b></div>
-        <div class="stat"><span id="k4">Durchgang</span><b id="v4">–</b></div>
+        <div class="stat"><span id="k3">Durchgang</span><b id="v3">–</b></div>
+        <div class="stat" hidden><span id="k4"></span><b id="v4"></b></div>
       </div>
     </div>
     <div class="progress" id="progress"><div id="progressBar"></div></div>
@@ -642,7 +642,14 @@ body {
   // ---------- UI helpers
   const $ = id => document.getElementById(id);
   const fmt = (n, d = 0) => n.toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
-  function setStats(pairs) { pairs.forEach(([k, v], i) => { $(`k${i + 1}`).textContent = k; $(`v${i + 1}`).textContent = v; }); }
+  // unused cells are hidden, so the lower third only shows what the current mode has
+  function setStats(pairs) {
+    for (let i = 0; i < 4; i++) {
+      const [k, v] = pairs[i] || ["", ""];
+      $(`k${i + 1}`).textContent = k; $(`v${i + 1}`).textContent = v;
+      $(`k${i + 1}`).parentElement.hidden = !pairs[i];
+    }
+  }
   function setCall(main, small, cls) {
     const c = $("call");
     $("callMain").textContent = main; $("callDist").textContent = small;
@@ -692,7 +699,7 @@ body {
     state.singleT = -0.35; state.singleLanded = false; state.paused = false; syncPause();
     $("shotName").textContent = shot.name;
     $("shotName").style.borderTopColor = "";
-    setStats([["Abflug", `${fmt(traj.v0 * 3.6)} km/h`], ["Aufprall", "–"], ["Flugzeit", "–"], ["Scheitel", "–"]]);
+    setStats([["Flugzeit", "–"], ["Scheitel", "–"]]);
     flash.position.set(shot.from.x, shot.from.y, shot.from.z); flash.material.color.setHex(COLORS.single);
     shuttle.visible = true; shadowDot.visible = true;
     const c = CAMS[state.cam]; flyTo(c.pos, c.tgt, 0.6);
@@ -703,7 +710,7 @@ body {
     const { isIn, cm } = callFor(p, "B");
     addLandingMark(p, isIn, nowMs);
     setCall(isIn ? "IN" : "OUT", isIn ? `${fmt(cm)} cm innen` : `${fmt(cm)} cm aus`, isIn ? null : "out");
-    setStats([["Abflug", `${fmt(traj.v0 * 3.6)} km/h`], ["Aufprall", `${fmt(p.v * 3.6)} km/h`], ["Flugzeit", `${fmt(p.t, 2)} s`], ["Scheitel", `${fmt(traj.apex, 2)} m`]]);
+    setStats([["Flugzeit", `${fmt(p.t, 2)} s`], ["Scheitel", `${fmt(traj.apex, 2)} m`]]);
     const from = traj.from, dir = new THREE.Vector3(from.x - p.x, 0, from.z - p.z).normalize();
     const camPos = [p.x + dir.x * 3.8 + 1.4, 1.9, p.z + dir.z * 3.8];
     state.singleLandedAt = clock;
@@ -725,7 +732,7 @@ body {
     state.paused = false; syncPause();
     $("shotName").textContent = d.drill.name || "Drill";
     $("shotName").style.borderTopColor = "";
-    setStats([["Schlag", "–"], ["Ziel", "–"], ["Abflug", "–"], ["Durchgang", `1/${d.reps}`]]);
+    setStats([["Schlag", "–"], ["Ziel", "–"], ["Durchgang", `1/${d.reps}`]]);
     shuttle.visible = false; shadowDot.visible = false;
     const c = camFor(state.cam); flyTo(c.pos, c.tgt, 0.6);
   }
@@ -744,7 +751,7 @@ body {
     shuttle.visible = true; shadowDot.visible = true;
     setCall(`${seg.n}/${state.drillData.perRep}`, seg.label, seg.actor);
     $("shotName").style.borderTopColor = CSS[seg.actor];
-    setStats([["Schlag", seg.type.name], ["Ziel", seg.target.label], ["Abflug", `${fmt(seg.traj.v0 * 3.6)} km/h`], ["Durchgang", `${seg.rep}/${state.drillData.reps}`]]);
+    setStats([["Schlag", seg.type.name], ["Ziel", seg.target.label], ["Durchgang", `${seg.rep}/${state.drillData.reps}`]]);
   }
 
   function endSegment(seg, nowMs) {
@@ -959,7 +966,7 @@ body {
       ctx.textAlign = "left";
     }
 
-    const cells = [1, 2, 3, 4].map(i => [$(`k${i}`).textContent.toUpperCase(), $(`v${i}`).textContent]);
+    const cells = [1, 2, 3, 4].filter(i => !$(`k${i}`).parentElement.hidden).map(i => [$(`k${i}`).textContent.toUpperCase(), $(`v${i}`).textContent]);
     const widths = cells.map(([k, v]) => { ctx.font = F(600, 19 * s); spacing(3 * s); const a = ctx.measureText(k).width; ctx.font = F(600, 36 * s); spacing(0.5 * s); return Math.max(a, ctx.measureText(v).width) + 40 * s; });
     const total = widths.reduce((a, b) => a + b, 0);
     ctx.fillStyle = "rgba(9,16,32,0.88)"; ctx.fillRect(padX, yStats, total, statsH);
@@ -1052,7 +1059,15 @@ body {
   async function offerSave() {
     if (!exp.file) return;
     const downloads = window.claude?.use ? await window.claude.use("downloads") : null;
-    if (!downloads) { setStatus("Speichern ist in dieser Ansicht nicht möglich. Öffne die Seite in claude.ai.", true); return; }
+    if (!downloads) {
+      // normal browser (GitHub Pages, local server): plain download link
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(exp.file); a.download = exp.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      setStatus(`Gespeichert: ${exp.name}`);
+      return;
+    }
     try {
       await downloads.save({ filename: exp.name, data: exp.file });
       setStatus(`Gespeichert: ${exp.name}`);

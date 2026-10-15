@@ -235,7 +235,7 @@ button { font: inherit; }
         <div class="stats">
           <div class="stat"><span>Schlag</span><b id="v1">–</b></div>
           <div class="stat"><span>Ziel</span><b id="v2">–</b></div>
-          <div class="stat"><span>Abflug</span><b id="v3">–</b></div>
+          <div class="stat"><span>Spieler</span><b id="v3">–</b></div>
           <div class="stat"><span>Durchgang</span><b id="v4">–</b></div>
         </div>
       </div>
@@ -506,7 +506,7 @@ button { font: inherit; }
     flash.position.set(f.x, f.y, f.z); flash.material.color.setHex(COLORS[seg.actor]); flash.userData.born = state.t;
     setCall(`${seg.n}/${state.data.perRep}`, seg.label, seg.actor);
     $("shotName").style.borderTopColor = CSS[seg.actor];
-    setStats([seg.type.name, seg.target.label, `${fmt(seg.traj.v0 * 3.6)} km/h`, `${seg.rep}/${state.data.reps}`]);
+    setStats([seg.type.name, seg.target.label, ROLE_DE[seg.by] || seg.by, `${seg.rep}/${state.data.reps}`]);
     state.active.push(seg);
   }
   function endSeg(seg, nowMs) {

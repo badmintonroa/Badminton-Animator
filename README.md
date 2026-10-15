@@ -12,6 +12,7 @@ Ein Drill wird als kleines JSON-Skript beschrieben (wer spielt welchen Schlag wo
 |---|---|
 | [`studio/`](studio/index.html) | **Flugbahn-Studio**: einzelne Schläge ausprobieren (Ziel per Klick setzen), einen Drill als JSON bearbeiten und als MP4 exportieren (Hochformat, Querformat oder Quadrat, 30 oder 60 fps). |
 | [`bibliothek/`](bibliothek/index.html) | **Multifeed-Bibliothek**: Trainingsprogramme mit mehreren Übungen, getrennt nach Doppel und Einzel. Unterstützt mehrere Bälle gleichzeitig in der Luft, zwei Worker und zwei Feeder. |
+| [`editor/`](editor/index.html) | **Drill-Editor**: Abläufe zusammenklicken (Spieler und Schlag wählen, Ziel aufs Feld tippen) oder Zeile für Zeile als Text eintippen. Die 3D-Vorschau spielt nach jeder Änderung neu ab. Ergebnis ist das normale Drill-JSON (kopieren, speichern oder als Link teilen). |
 | [`engine.js`](engine.js) | Physik und Drill-Logik ohne Grafik, wird von der Bibliothek und von `tools/check.js` benutzt. |
 | [`beispiele/programm.js`](beispiele/programm.js) | Ein selbst ausgedachtes Beispielprogramm mit drei Drills. |
 
@@ -75,6 +76,24 @@ Vorhand und Rückhand richten sich nach der Schlaghand des Workers auf der Seite
 - `tempo.feed_after_hit` legt fest, wie viele Sekunden nach dem letzten Schlag der nächste neue Ball kommt. Ohne diesen Wert wartet der Feeder `pause_between_shuttles` Sekunden nach der Landung.
 - `contact` überschreibt die Treffhöhe in Metern, `label` den angezeigten Text, `from` die Startzone.
 - Mehrere Spieler einer Rolle: Schlüssel frei wählen (z. B. `worker_1`, `worker_2`) und `"role": "worker"` bzw. `"role": "feeder"` setzen.
+
+## Drill-Editor
+
+Im Editor baust du einen Ablauf auf zwei Arten, beide bleiben automatisch gleich:
+
+- **Klicken:** Oben wählst du, wer schlägt und welchen Schlag. Dann tippst du aufs Feld, wo der Ball landen soll (am einfachsten mit der Kamera „Oben“). Danach ist automatisch der Spieler auf der anderen Seite dran. „Neuer Ball“ startet einen neuen Ball (Multifeed). Mit „◎ Feld“ an einem Schlag setzt du dessen Ziel neu.
+- **Tippen:** eine Zeile pro Schlag, z. B.
+
+  ```
+  feeder smash B.mid_forehand "Angriff VH"
+  worker block A.front_center
+  feeder net_feed B.front_forehand neu
+  worker net_kill A.mid_center
+  ```
+
+  Die Reihenfolge der Wörter ist egal: Spieler, Schlag, Ziel, optional `neu` und ein Text in Anführungszeichen. Weitere Felder gehen als `name=wert`, z. B. `contact=0.6`.
+
+Spieler, Einzel/Doppel, Wiederholungen und Tempo stellst du darunter ein. Der Entwurf wird im Browser gespeichert. „JSON“ zeigt das Skript zum Kopieren (z. B. nach `beispiele/programm.js`), „Link kopieren“ erzeugt einen Link, der den Drill enthält.
 
 ## Eigene Programme
 

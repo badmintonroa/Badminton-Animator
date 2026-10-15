@@ -2,6 +2,7 @@
 // Aufruf: node tools/check.js [pfad/zur/programm.js]
 const path = require("path");
 const { buildDrill } = require("../engine.js");
+const DrillText = require("../editor/text.js");
 
 const file = path.resolve(process.argv[2] || path.join(__dirname, "../beispiele/programm.js"));
 const LIB = require(file);
@@ -10,6 +11,10 @@ let errors = 0;
 for (const [id, drill] of Object.entries(LIB.drills)) {
   try {
     const d = buildDrill(drill);
+    // the editor's text form must give back exactly the same sequence
+    const again = DrillText.parse(DrillText.format(drill.sequence), Object.keys(drill.players));
+    const canon = seq => JSON.stringify(seq.map(s => Object.fromEntries(Object.entries(s).sort())));
+    if (canon(again) !== canon(drill.sequence)) throw new Error("Die Textform im Editor weicht vom Skript ab.");
     console.log(`ok    ${id}: ${d.perRep} Schläge × ${d.reps}, ${d.total.toFixed(1)} s`);
   } catch (e) {
     errors++;
