@@ -29,7 +29,7 @@ jobs:
       - name: Seite zusammenstellen
         run: |
           mkdir _site
-          cp -r index.html engine.js studio bibliothek beispiele docs LICENSE _site/
+          cp -r index.html engine.js studio bibliothek editor beispiele docs LICENSE _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
